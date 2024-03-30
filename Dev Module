@@ -1,0 +1,216 @@
+#define MAX_ACCOUNTS 100
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+// Bank identifiers
+#define CENTRAL_BANK "Central"
+#define BANK_US "US"
+#define BANK_EU "EU"
+#define BANK_AS "AS"
+
+
+// Function prototypes
+void addTransaction(const char* from, const char* to, int amount, unsigned int timestamp);
+void showBalance(const char* account);
+void settleAccounts();
+void deleteTransaction(unsigned int timestamp);
+void processBatch(const char* filepath);
+void addBalance(const char* account, int amount);
+void initializeBanks();
+void listAccounts();
+int getBalance(const char* account);
+void handleBackedTransaction(char* from, const char* to, int amount, unsigned int timestamp);
+void showGeneralHelp();
+void showDepositHelp();
+void showTransferHelp();
+void showBalanceHelp();
+void showSettleHelp();
+void showDeleteHelp();
+void showBatchHelp();
+void showWithdrawHelp();
+void showBackHelp();
+
+typedef struct {
+    char account[50];    // Account receiving the backing
+    char backedBy[50];   // Account providing the backing
+    int limit;           // Maximum amount allowed for backing
+    unsigned int startTimestamp;  // When the backing starts
+    unsigned int duration;        // How long the backing lasts
+} AccountBacking;
+
+typedef struct {
+    char account[50];    // Account receiving the backing
+    int balance;   // Account providing the backing
+         // How long the backing lasts
+} AccountBalance;
+
+AccountBalance balances[MAX_ACCOUNTS];
+AccountBacking backings[100]; // Assuming a max of 100 backing relationships for simplicity
+int backingCount = 0;
+int balanceCount = 0;
+
+
+int findArgIndex(int argc, char* argv[], const char* argToFind) {
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], argToFind) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void handleDeposit(int argc, char* argv[]) {
+    int accountIndex = findArgIndex(argc, argv, "--account") + 1;
+    int amountIndex = findArgIndex(argc, argv, "--amount") + 1;
+    int timestampIndex = findArgIndex(argc, argv, "--timestamp") + 1;
+
+    if (accountIndex <= 0 || amountIndex <= 0 || timestampIndex <= 0) {
+        printf("Missing arguments for deposit command.\n");
+        return;
+    }
+
+    int amount = atoi(argv[amountIndex]);
+    if (amount <= 0) {
+        printf("Invalid deposit amount.\n");
+        return;
+    }
+
+    // Ensure the account exists or create a new one
+   // ensureAccountExists(argv[accountIndex]);
+
+    // Update the balance
+    addBalance(argv[accountIndex], amount);
+
+    // Record the transaction
+    FILE* file = fopen("transactions.txt", "a");
+    if (file == NULL) {
+        printf("Error opening transactions file.\n");
+        return;
+    }
+
+    // Assuming "DEPOSIT" as the source for deposit transactions
+    fprintf(file, "%s: DEPOSIT sent %s %d\n", argv[timestampIndex], argv[accountIndex], amount);
+    fclose(file);
+    printf("Deposited %s to account %s at timestamp %s\n", argv[amountIndex], argv[accountIndex], argv[timestampIndex]);
+}
+
+void handleBalance(int argc, char* argv[]) {
+    int accountIndex = findArgIndex(argc, argv, "--account") + 1;
+
+    if (accountIndex <= 0) {
+        printf("Usage: tx balance --account <account>\n");
+        return;
+    }
+
+    showBalance(argv[accountIndex]);
+}
+
+void loadTransactions() {
+    FILE* file = fopen("transactions.txt", "r");
+    if (file == NULL) {
+        printf("No transactions file found. Starting fresh.\n");
+        return;
+    }
+
+    unsigned int timestamp;
+    char from[50], to[50];
+    int amount;
+
+    while (fscanf(file, "%u: %s sent %s %d\n", &timestamp, from, to, &amount) == 4) {
+        if (strcmp(from, "DEPOSIT") == 0) {
+            addBalance(to, amount);
+        }
+        else {
+            addBalance(from, -amount);
+            addBalance(to, amount);
+        }
+    }
+    fclose(file);
+}
+
+
+//Main Function 
+int main(int argc, char* argv[]) {
+    loadTransactions();
+    initializeBanks(); // Initialize banks with starting balances
+    
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--help") == 0) {
+            if (argc == 2) {
+                // General help
+                showGeneralHelp();
+            }
+            else if (i > 1) { // Help for a specific command, based on argument before --help
+                if (strcmp(argv[i - 1], "deposit") == 0) {
+                    showDepositHelp();
+                }
+                else if (strcmp(argv[i - 1], "transfer") == 0) {
+                    showTransferHelp();
+                }
+                else if (strcmp(argv[i - 1], "balance") == 0) {
+                    showBalanceHelp();
+                }
+                else if (strcmp(argv[i - 1], "settle") == 0) {
+                    showSettleHelp();
+                }
+                else if (strcmp(argv[i - 1], "delete") == 0) {
+                    showDeleteHelp();
+                }
+                else if (strcmp(argv[i - 1], "batch") == 0) {
+                    showBatchHelp();
+                }
+                else if (strcmp(argv[i - 1], "withdraw") == 0) {
+                    showWithdrawHelp();
+                }
+                else if (strcmp(argv[i - 1], "back") == 0) {
+                    showBackHelp();
+                }
+                // Add else if branches for other commands as needed
+            }
+            return 0; // Exit after showing help
+        }
+    }
+
+
+        if (argc < 2) {
+            printf("Usage: tx <command> [arguments]\n");
+            return 1;
+        }
+
+        if (strcmp(argv[1], "--list-accounts") == 0) {
+            listAccounts();
+        }
+        else if (strcmp(argv[1], "deposit") == 0) {
+            handleDeposit(argc, argv);
+        }
+        else if (strcmp(argv[1], "transfer") == 0) {
+            handleTransfer(argc, argv);
+        }
+        else if (strcmp(argv[1], "balance") == 0) {
+            handleBalance(argc, argv);
+        }
+        else if (strcmp(argv[1], "settle") == 0) {
+            settleAccounts();
+        }
+        else if (strcmp(argv[1], "delete") == 0) {
+            if (argc == 4) {
+                deleteTransaction((unsigned int)atoi(argv[3]));
+            }
+            else {
+                printf("Usage: /tx delete --timestamp <timestamp>\n");
+            }
+        }
+        else if (strcmp(argv[1], "batch") == 0) {
+            processBatch(argv[2]);
+        }
+        else if (strcmp(argv[1], "withdraw") == 0) {
+            handleWithdraw(argc, argv);
+        }
+
+        else {
+            printf("Unknown command. Supported commands are 'deposit', 'transfer', 'balance', 'settle', 'delete', 'batch'.\n");
+        }
+    
+    return 0;
+}
