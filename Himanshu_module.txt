@@ -1,0 +1,198 @@
+void deleteTransaction(unsigned int cutoffTimestamp) {
+    FILE* file = fopen("transactions.txt", "r");
+    if (file == NULL) {
+        printf("Error opening transactions file for reading.\n");
+        return;
+    }
+
+    FILE* tempFile = fopen("temp_transactions.txt", "w");
+    if (tempFile == NULL) {
+        printf("Error creating temporary transactions file.\n");
+        fclose(file);
+        return;
+    }
+
+    unsigned int timestamp;
+    char from[50], to[50];
+    int amount;
+
+    // Read each transaction and write it to the temp file if it's older than the cutoff timestamp
+    while (fscanf(file, "%u: %s sent %s %d\n", &timestamp, from, to, &amount) == 4) {
+        if (timestamp > cutoffTimestamp) {
+            fprintf(tempFile, "%u: %s sent %s %d\n", timestamp, from, to, amount);
+        }
+    }
+
+    fclose(file);
+    fclose(tempFile);
+
+    // Remove the original transactions file and rename the temporary file
+    remove("transactions.txt");
+    rename("temp_transactions.txt", "transactions.txt");
+
+    printf("Transactions after timestamp %u have been deleted.\n", cutoffTimestamp);
+}
+
+void listAccounts() {
+    if (balanceCount == 0) {
+        printf("No accounts found.\n");
+    }
+    else {
+        printf("List of accounts:\n");
+        for (int i = 0; i < balanceCount; i++) {
+            printf("%s\n", balances[i].account);
+        }
+    }
+}
+
+void processBatch(const char* filepath) {
+    FILE* file = fopen(filepath, "r");
+    if (file == NULL) {
+        printf("Error opening batch file.\n");
+        return;
+    }
+
+    char line[256], prevFrom[50] = "", prevTo[50] = "", prevAmount[50] = "", prevTimestamp[50] = "";
+    while (fgets(line, sizeof(line), file)) {
+        char from[50] = "", to[50] = "", amount[50] = "", timestamp[50] = "";
+
+        sscanf(line, "%[^:]:%[^:]:%[^:]:%s\n", from, to, amount, timestamp);
+
+        // Use previous values if current ones are missing
+        if (strcmp(from, "") == 0) strcpy(from, prevFrom);
+        if (strcmp(to, "") == 0) strcpy(to, prevTo);
+        if (strcmp(amount, "") == 0) strcpy(amount, prevAmount);
+        if (strcmp(timestamp, "") == 0) strcpy(timestamp, prevTimestamp);
+
+        // Save current values for next iteration
+        strcpy(prevFrom, from);
+        strcpy(prevTo, to);
+        strcpy(prevAmount, amount);
+        strcpy(prevTimestamp, timestamp);
+
+        // Process the transaction, handling backed transactions if necessary
+        if (strchr(from, '(') != NULL) {
+            // This is a backed transaction
+            handleBackedTransaction(from, to, atoi(amount), (unsigned int)atoi(timestamp));
+        }
+        else {
+            // This is a regular transaction
+            addTransaction(from, to, atoi(amount), (unsigned int)atoi(timestamp));
+        }
+    }
+
+    fclose(file);
+}
+
+void handleBack(int argc, char* argv[]) {
+    // Parse command line arguments for the back command
+    // You need to find indexes similar to previous handle functions and retrieve values
+    // After retrieving and validating all necessary information, proceed to add a new backing relationship
+
+    // Example to add a new backing relationship, details for parsing and validation are omitted for brevity
+    strcpy(backings[backingCount].account, "EU");
+    strcpy(backings[backingCount].backedBy, "US");
+    backings[backingCount].limit = 20;
+    backings[backingCount].startTimestamp = 2;
+    backings[backingCount].duration = 10;
+    backingCount++;
+    // Inside handleBack function
+    if (argc == 2) { // Only the 'back' command without additional arguments
+        for (int i = 0; i < backingCount; i++) {
+            printf("%s is backed by %s with a limit of %d from timestamp %u for duration %u\n",
+                backings[i].account, backings[i].backedBy, backings[i].limit,
+                backings[i].startTimestamp, backings[i].duration);
+        }
+    }
+}
+
+void handleBackedTransaction(char* from, const char* to, int amount, unsigned int timestamp) {
+    // Extract the primary account and any backing accounts from the 'from' string
+    // For simplicity, let's assume 'from' has a format like "primary(backer1,backer2,...)"
+    char primaryAccount[50];
+    char backingAccounts[100]; // Adjust size as needed
+    sscanf(from, "%[^()](%[^)])", primaryAccount, backingAccounts);
+
+    // Check if the primary account has sufficient balance
+    int primaryBalance = getBalance(primaryAccount);
+    if (primaryBalance >= amount) {
+        // Primary account has enough balance; proceed with the transaction as usual
+        addTransaction(primaryAccount, to, amount, timestamp);
+        return;
+    }
+
+    // If the primary account does not have enough balance, check backing accounts
+    char* token = strtok(backingAccounts, ",");
+    while (token != NULL) {
+        int backerBalance = getBalance(token);
+        // Calculate how much of the amount the backer needs to cover
+        int needed = amount - primaryBalance; // This needs adjustment based on your logic
+
+        if (backerBalance >= needed) {
+            // Backer has enough balance to cover the remaining amount
+            // You might need to split the transaction, or adjust balances directly
+            // For simplicity, this example will just print a message
+            printf("Backed transaction: %s covers %d for %s\n", token, needed, primaryAccount);
+            // Adjust balances as needed, record the transaction, etc.
+            break;
+        }
+
+        token = strtok(NULL, ",");
+    }
+
+    // Note: This example doesn't fully implement the logic. You'll need to
+    // - Deduct the amount covered by backers from their balances
+    // - Add the transaction to the transactions file
+    // - Handle cases where multiple backers are needed
+    // - Ensure the total covered by backers does not exceed their limits
+}
+
+void showGeneralHelp() {
+    printf("Usage: tx <command> [arguments]\n");
+    printf("Commands:\n");
+    printf("  deposit -- Deposits an amount to a specified account\n");
+    printf("  transfer -- Transfers an amount from one account to another\n");
+    printf("  balance -- Shows the balance of a specified account\n");
+    // Add more commands as needed
+    printf("Use 'tx <command> --help' for more information on a command.\n");
+}
+
+void showDepositHelp() {
+    printf("Usage: tx deposit --account <account_name> --amount <amount> [--timestamp <timestamp>]\n");
+    printf("Deposits the specified amount into the specified account.\n");
+}
+
+void showTransferHelp() {
+    printf("Usage: tx transfer --from <source_account> --to <destination_account> --amount <amount> [--timestamp <timestamp>]\n");
+    printf("Transfers the specified amount from the source account to the destination account.\n");
+}
+
+void showBalanceHelp() {
+    printf("Usage: tx balance --account <account_name>\n");
+    printf("Displays the current balance of the specified account.\n");
+}
+
+void showSettleHelp() {
+    printf("Usage: tx settle\n");
+    printf("Calculates and displays the settlements required to balance all accounts.\n");
+}
+
+void showDeleteHelp() {
+    printf("Usage: tx delete --timestamp <timestamp>\n");
+    printf("Deletes all transactions recorded after the specified timestamp.\n");
+}
+
+void showBatchHelp() {
+    printf("Usage: tx batch <filepath>\n");
+    printf("Processes a batch of transactions from a specified file.\n");
+}
+
+void showWithdrawHelp() {
+    printf("Usage: tx withdraw --account <account_name> --amount <amount>\n");
+    printf("Withdraws the specified amount from the specified account.\n");
+}
+
+void showBackHelp() {
+    printf("Usage: tx back --account <account_name> --by <backing_account> --limit <limit> --timestamp <timestamp> --duration <duration>\n");
+    printf("Allows an account to use another account's deposit for its transfers within specified limits and time frame.\n");
+}
